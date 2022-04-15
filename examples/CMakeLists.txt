@@ -43,3 +43,8 @@ add_executable(multi_processes_example
   multi_processes_example.cc)
 target_link_libraries(multi_processes_example
   ${ROCKSDB_LIB})
+
+add_executable(rocksdb_get_test
+        rocksdb_get_test.cpp)
+target_link_libraries(rocksdb_get_test
+        ${ROCKSDB_LIB})

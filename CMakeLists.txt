@@ -1355,7 +1355,7 @@ if(WITH_TESTS)
       monitoring/thread_status_updater_debug.cc
       table/mock_table.cc
       utilities/cassandra/test_utils.cc
-  )
+          examples/rocksdb_get_test.cpp)
   enable_testing()
   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
   set(TESTUTILLIB testutillib${ARTIFACT_SUFFIX})
