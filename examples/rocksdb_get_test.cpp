@@ -3,119 +3,187 @@
 //
 
 #include <cassert>
-#include <string>
-#include <iostream>
 #include <fstream>
+#include <iostream>
+#include <random>
+#include <string>
+
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
+#include "rocksdb/table.h"
 
 using namespace std;
 
+
+
+double get(rocksdb::DB* db, const vector<rocksdb::Slice>& keys, string &value, rocksdb::Status &status){
+  auto start = std::chrono::high_resolution_clock::now();
+  for (rocksdb::Slice key : keys) {
+    status = db->Get(rocksdb::ReadOptions(), key, &value);
+    assert(status.ok());
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> float_ms = end - start;
+  return float_ms.count();
+}
+
+double multiGet(rocksdb::DB* db, vector<rocksdb::Slice> &keys, vector<rocksdb::PinnableSlice> &values, vector<rocksdb::Status> &statuses){
+  auto start = std::chrono::high_resolution_clock::now();
+  db->MultiGet(rocksdb::ReadOptions(), db->DefaultColumnFamily(),
+               keys.size(), keys.data(), values.data(),
+               statuses.data());
+  for (const rocksdb::Status& status_check : statuses) {
+    assert(status_check.ok());
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> float_ms = end - start;
+  return float_ms.count();
+}
+
+string getKey(int i){
+  return "key" + to_string(i);
+}
+
+vector<rocksdb::Slice> generateKeySlices(const vector<string>& keys){
+  vector<rocksdb::Slice> keySlices;
+  for(const string& key : keys){
+    keySlices.emplace_back(key);
+  }
+  return keySlices;
+}
+
+vector<string> generateTestKeys(int totkeys){
+  vector<string> testKeys;
+  testKeys.emplace_back(getKey(0));
+  testKeys.emplace_back(getKey(totkeys-1));
+  testKeys.emplace_back(getKey(5000));
+  testKeys.emplace_back(getKey(1000));
+  testKeys.emplace_back(getKey(totkeys/2-1));
+  testKeys.emplace_back(getKey(7000));
+  return testKeys;
+}
+
+vector<string> generateRandomTestKeys(int amount, int totkeys){
+  unsigned seed = std::chrono::steady_clock::now().time_since_epoch().count();
+  default_random_engine randomEngine(seed);
+  vector<string> testKeys;
+  for(int i = 0; i < amount; i++){
+    testKeys.emplace_back(getKey(randomEngine()%totkeys));
+  }
+  return testKeys;
+}
+
+void evictCacheValues(rocksdb::DB* db, int numOfKeys, rocksdb::Status &status){
+  string value;
+  for (int i = 0; i < numOfKeys; i++){
+    string key = getKey(i);
+    status = db->Get(rocksdb::ReadOptions(), key, &value);
+    assert(status.ok());
+  }
+}
+
+void dbFillKeys(rocksdb::DB* db, int keyamount, rocksdb::Status &status){
+  int p = 0;
+  for(int i = 0; i < keyamount; i++){
+    string key = getKey(i);
+    string value = "value" + to_string(i);
+    status = db->Put(rocksdb::WriteOptions(), key, value);
+    assert(status.ok());
+    if(i%(keyamount/100)==0){
+      cout << "[" + to_string(p++) + "%]" << endl;
+    }
+  }
+  db->Flush(rocksdb::FlushOptions());
+}
+
 int main(int argc, char** argv) {
-  const int NUM_OF_KEYS[] = {5, 10, 100, 1000, 10000};
-  const int NUM_OF_RUNS = 1000;
-  const int NUM_OF_KEY_AMOUNT = std::extent<decltype(NUM_OF_KEYS)>::value;
-  const int TOTAL_KEYS = NUM_OF_KEYS[NUM_OF_KEY_AMOUNT-1];
+  const int NUM_OF_KEYS[] = {5, 10, 50, 100, 500, 1000};
+  const int NUM_OF_RUNS = 100;
+  const int TOTAL_KEYS = 1000000000;
 
   rocksdb::DB* db;
   rocksdb::Options options;
   options.create_if_missing = true;
+
   rocksdb::Status status =
-      rocksdb::DB::Open(options, "/tmp/testdb", &db);
+      rocksdb::DB::Open(options, "/home/fredrik/testdb", &db);
   assert(status.ok());
 
-  string keys[TOTAL_KEYS];
   vector<vector<rocksdb::Slice>> list_slice_keys;
   vector<rocksdb::PinnableSlice> values;
   vector<rocksdb::Status> statuses;
-  double raw_get_data[NUM_OF_KEY_AMOUNT][NUM_OF_RUNS];
-  double raw_multiget_data[NUM_OF_KEY_AMOUNT][NUM_OF_RUNS];
+  vector<vector<double>> getRawData;
+  vector<vector<double>> multiGetRawData;
 
+  string value;
   ofstream outfile;
-
-  // Insert the right amount of elements
-  for (int i = 0; i < TOTAL_KEYS; i++) {
-    string key = "key" + to_string(i);
-    string value = "value" + to_string(i);
-    status = db->Put(rocksdb::WriteOptions(), key, value);
-    keys[i] = key;
-    assert(status.ok());
-  }
-
-  for (int i : NUM_OF_KEYS) {
-    vector<rocksdb::Slice> slice_keys;
-    for(int j = 0; j < i; j++) {
-      slice_keys.emplace_back(keys[j]);
-    }
-    list_slice_keys.emplace_back(slice_keys);
-  }
 
   // Flush the data from the memtable to disk
   db->Flush(rocksdb::FlushOptions());
 
-  // Read back values
-  // For each instance of the NUM_OF_KEYS array, run NUM_OF_RUNS iterations
-  // where for each run the specified number of keys (the instance of the NUM_OF_KEYS array)
-  // will be fetched by Get()-calls in a loop and a MultiGet() with the same keys.
+  // Warmup
+  cout << "Starting warmup" << endl;
+  values.resize(5);
+  statuses.resize(5);
+  for(int i = 0; i < 100; i++){
+    vector<string> getKeys = generateRandomTestKeys(5, TOTAL_KEYS);
+    vector<string> mulKeys = generateRandomTestKeys(5, TOTAL_KEYS);
+    vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
+    vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
+    get(db, getKeySlices, value, status);
+    multiGet(db, mulKeySlices, values, statuses);
+  }
+  cout << "Warmup finished" << endl;
 
-  string value;
-  double time1;
-  double time2;
+  for (int numFetches : NUM_OF_KEYS) {
+    double totGetTime = 0;
+    double totMulTime = 0;
+    vector<double> rawGetRow;
+    vector<double> rawMultiGetRow;
+    values.resize(numFetches);
+    statuses.resize(numFetches);
 
-  for (int i = 0; i < NUM_OF_KEY_AMOUNT; i++) {
-    time1 = 0;
-    time2 = 0;
-    values.resize(list_slice_keys[i].size());
-    statuses.resize(list_slice_keys[i].size());
-    double raw_get_data_row[NUM_OF_RUNS];
-    double raw_multiget_data_row[NUM_OF_RUNS];
-
-    for (int j = 0; j < NUM_OF_RUNS; j++) {
-      auto start1 = std::chrono::high_resolution_clock::now();
-      for (int key_index = 0; key_index < NUM_OF_KEYS[i]; key_index++) {
-        status = db->Get(rocksdb::ReadOptions(), keys[key_index], &value);
-        assert(status.ok());
-      }
-      auto end1 = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double, std::milli> float_ms1 = end1 - start1;
-      time1 += float_ms1.count();
-      raw_get_data_row[j] = float_ms1.count();
-
-      auto start2 = std::chrono::high_resolution_clock::now();
-      db->MultiGet(rocksdb::ReadOptions(), db->DefaultColumnFamily(),
-                   list_slice_keys[i].size(), list_slice_keys[i].data(), values.data(),
-                   statuses.data());
-      for (const rocksdb::Status& status_check : statuses) {
-        assert(status_check.ok());
-      }
-      auto end2 = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double, std::milli> float_ms2 = end2 - start2;
-      time2 += float_ms2.count();
-      raw_multiget_data_row[j] = float_ms2.count();
+    for (int i = 0; i < NUM_OF_RUNS; i++) {
+      vector<string> getKeys = generateRandomTestKeys(numFetches, TOTAL_KEYS);
+      vector<string> mulKeys = generateRandomTestKeys(numFetches, TOTAL_KEYS);
+      vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
+      vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
+      double getTime = get(db, getKeySlices, value, status);
+      double mulTime = multiGet(db, mulKeySlices, values, statuses);
+      totGetTime += getTime;
+      totMulTime += mulTime;
+      rawGetRow.emplace_back(getTime);
+      rawMultiGetRow.emplace_back(mulTime);
     }
+    getRawData.emplace_back(rawGetRow);
+    multiGetRawData.emplace_back(rawMultiGetRow);
 
-    // Not the nicest solution to copy the array, but it was an easy solution
-    copy(begin(raw_get_data_row), end(raw_get_data_row), begin(raw_get_data[i]));
-    copy(begin(raw_multiget_data_row), end(raw_multiget_data_row), begin(raw_multiget_data[i]));
-
-    cout << "The Get() read with " + to_string(NUM_OF_KEYS[i]) +" took on average "
-              << time1 / NUM_OF_RUNS << " milliseconds" << endl;
-    cout << "The MultiGet() read with " + to_string(NUM_OF_KEYS[i]) + " took on average "
-              << time2 / NUM_OF_RUNS << " milliseconds" << endl;
+    cout << "Avg get: " + to_string(totGetTime/NUM_OF_RUNS) << endl;
+    cout << "Avg mul: " + to_string(totMulTime/NUM_OF_RUNS) << endl;
+    cout << endl;
   }
 
-  outfile.open("get_vs_multiget_rawdata.txt");
+  outfile.open("get_rawdata_random.txt");
   if(outfile.is_open()) {
-    for (int i = 0; i < NUM_OF_KEY_AMOUNT; i++) {
-      for (int j = 0; j < NUM_OF_RUNS-1; j++) {
-        outfile << raw_get_data[i][j] << ",";
+    for(const vector<double>& getRow : getRawData){
+      for(double rawGetData : getRow){
+        outfile << rawGetData << " ";
       }
-      outfile << raw_get_data[i][NUM_OF_RUNS-1] << endl;
+      outfile << endl;
+    }
+    outfile.close();
+  }
+  else{
+    cout << "Unable to open file" << endl;
+  }
 
-      for (int j = 0; j < NUM_OF_RUNS-1; j++) {
-        outfile << raw_multiget_data[i][j] << ",";
+  outfile.open("multiget_rawdata_random.txt");
+  if(outfile.is_open()) {
+    for(const vector<double>& multiGetRow : multiGetRawData){
+      for(double rawMultiGetData : multiGetRow){
+        outfile << rawMultiGetData << " ";
       }
-      outfile << raw_multiget_data[i][NUM_OF_RUNS-1] << endl;
+      outfile << endl;
     }
     outfile.close();
   }
