@@ -17,14 +17,21 @@ using namespace std;
 
 
 double get(rocksdb::DB* db, const vector<rocksdb::Slice>& keys, string &value, rocksdb::Status &status){
-  auto start = std::chrono::high_resolution_clock::now();
+  double time = 0;
+//  auto start = std::chrono::high_resolution_clock::now();
   for (rocksdb::Slice key : keys) {
+    auto start = std::chrono::high_resolution_clock::now();
     status = db->Get(rocksdb::ReadOptions(), key, &value);
     assert(status.ok());
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> float_ms = end - start;
+    cout << float_ms.count() << " ";
+    time += float_ms.count();
   }
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> float_ms = end - start;
-  return float_ms.count();
+  cout << endl;
+//  auto end = std::chrono::high_resolution_clock::now();
+//  std::chrono::duration<double, std::milli> float_ms = end - start;
+  return time;
 }
 
 double multiGet(rocksdb::DB* db, vector<rocksdb::Slice> &keys, vector<rocksdb::PinnableSlice> &values, vector<rocksdb::Status> &statuses){
