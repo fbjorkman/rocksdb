@@ -53,3 +53,8 @@ add_executable(rocksdb_fill_keys
         rocksdb_fill_keys.cpp)
 target_link_libraries(rocksdb_fill_keys
         ${ROCKSDB_LIB})
+
+add_executable(rocksdb_get_test_mixed
+        rocksdb_get_test_mixed.cpp)
+target_link_libraries(rocksdb_get_test_mixed
+        ${ROCKSDB_LIB})
