@@ -42,6 +42,19 @@ string getKey(int i){
   return "key" + to_string(i);
 }
 
+int getKeyIndexUniform(int setSize){
+  unsigned seed = std::chrono::steady_clock::now().time_since_epoch().count();
+  default_random_engine randomEngine(seed);
+  return randomEngine() % setSize;
+}
+
+bool keyIsCommon(double prob){
+  unsigned seed = std::chrono::steady_clock::now().time_since_epoch().count();
+  default_random_engine randomEngine(seed);
+  uniform_real_distribution<> uniform_zero_to_one(0.0, 1.0);
+  return uniform_zero_to_one(randomEngine) <= prob;
+}
+
 vector<rocksdb::Slice> generateKeySlices(const vector<string>& keys){
   vector<rocksdb::Slice> keySlices;
   for(const string& key : keys){
@@ -50,46 +63,41 @@ vector<rocksdb::Slice> generateKeySlices(const vector<string>& keys){
   return keySlices;
 }
 
-vector<string> generateTestKeys(int totkeys){
+vector<string> generateTestKeys(int amount, vector<string> &commonKeys, int totalKeys, double prob){
   vector<string> testKeys;
-  testKeys.emplace_back(getKey(0));
-  testKeys.emplace_back(getKey(totkeys-1));
-  testKeys.emplace_back(getKey(5000));
-  testKeys.emplace_back(getKey(1000));
-  testKeys.emplace_back(getKey(totkeys/2-1));
-  testKeys.emplace_back(getKey(7000));
+  for(int i = 0; i < amount; i++){
+    if(keyIsCommon(prob)){
+      testKeys.emplace_back(commonKeys.at(getKeyIndexUniform(commonKeys.size())));
+    } else{
+      testKeys.emplace_back(getKey(getKeyIndexUniform(totalKeys)));
+    }
+  }
   return testKeys;
 }
 
-vector<string> generateRandomTestKeys(int fetchAmount, int totkeys){
+vector<string> generateRandomTestKeys(int numOfKeysInSet, int totkeys){
   unsigned seed = std::chrono::steady_clock::now().time_since_epoch().count();
   default_random_engine randomEngine(seed);
   vector<string> testKeys;
-  for(int i = 0; i < fetchAmount; i++){
+  for(int i = 0; i < numOfKeysInSet; i++){
     testKeys.emplace_back(getKey(randomEngine()%totkeys));
   }
   return testKeys;
 }
 
-vector<vector<string>> generateCommonSets(int fetchAmount, int totkeys, int setSize) {
-  vector<vector<string>> commonSets;
-  for(int i = 0; i < setSize; i++){
-    commonSets.emplace_back(generateRandomTestKeys(fetchAmount, totkeys));
+void doWarmup(rocksdb::DB* db, string &value, rocksdb::Status &status,
+              vector<rocksdb::PinnableSlice> &values, vector<rocksdb::Status> &statuses,
+              double prob, int totKeys, vector<string> &commonKeys,
+              int numFetches){
+
+  for(int i = 0; i < 100; i++){
+    vector<string> getKeys = generateTestKeys(numFetches, commonKeys, totKeys, prob);
+    vector<string> mulKeys = generateTestKeys(numFetches, commonKeys, totKeys, prob);
+    vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
+    vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
+    get(db, getKeySlices, value, status);
+    multiGet(db, mulKeySlices, values, statuses);
   }
-  return commonSets;
-}
-
-bool keyFromCommonSet(double prob){
-  unsigned seed = std::chrono::steady_clock::now().time_since_epoch().count();
-  default_random_engine randomEngine(seed);
-  uniform_real_distribution<> uniform_zero_to_one(0.0, 1.0);
-  return uniform_zero_to_one(randomEngine) <= prob;
-}
-
-int getKeySetIndexUniform(int setSize){
-  unsigned seed = std::chrono::steady_clock::now().time_since_epoch().count();
-  default_random_engine randomEngine(seed);
-  return randomEngine() % setSize;
 }
 
 void evictCacheValues(rocksdb::DB* db, int numOfKeys, rocksdb::Status &status){
@@ -117,10 +125,9 @@ void dbFillKeys(rocksdb::DB* db, int keyamount, rocksdb::Status &status){
 
 int main(int argc, char** argv) {
   const int NUM_OF_KEYS[] = {5, 10, 50, 100, 500, 1000};
-  const int NUM_OF_RUNS = 100;
+  const int NUM_OF_RUNS = 1000;
   const int TOTAL_KEYS = 1000000000;
-  const int NUM_OF_COMMON_SETS = 10;
-  const double KEY_FROM_COMMON_SET_PROB = 0.5;
+  const double COMMON_KEY_PROB = 0.5;
 
   rocksdb::DB* db;
   rocksdb::Options options;
@@ -142,31 +149,6 @@ int main(int argc, char** argv) {
   // Flush the data from the memtable to disk
   db->Flush(rocksdb::FlushOptions());
 
-  // Warmup
-  cout << "Starting warmup" << endl;
-  vector<vector<string>> warmUpCommonSets =
-      generateCommonSets(5, TOTAL_KEYS, NUM_OF_COMMON_SETS);
-  values.resize(5);
-  statuses.resize(5);
-
-  for(int i = 0; i < 100; i++){
-    vector<string> getKeys;
-    vector<string> mulKeys;
-
-    if(keyFromCommonSet(KEY_FROM_COMMON_SET_PROB)){
-      getKeys = warmUpCommonSets.at(getKeySetIndexUniform(NUM_OF_COMMON_SETS));
-      mulKeys = warmUpCommonSets.at(getKeySetIndexUniform(NUM_OF_COMMON_SETS));
-    } else {
-      getKeys = generateRandomTestKeys(5, TOTAL_KEYS);
-      mulKeys = generateRandomTestKeys(5, TOTAL_KEYS);
-    }
-    vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
-    vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
-    get(db, getKeySlices, value, status);
-    multiGet(db, mulKeySlices, values, statuses);
-  }
-  cout << "Warmup finished" << endl;
-
   for (int numFetches : NUM_OF_KEYS) {
     double totGetTime = 0;
     double totMulTime = 0;
@@ -174,19 +156,16 @@ int main(int argc, char** argv) {
     vector<double> rawMultiGetRow;
     values.resize(numFetches);
     statuses.resize(numFetches);
-    vector<vector<string>> commonSets =
-        generateCommonSets(numFetches, TOTAL_KEYS, NUM_OF_COMMON_SETS);
+    vector<string> commonKeys = generateRandomTestKeys(numFetches*10, TOTAL_KEYS);
+    // Warmup
+    cout << "Starting warmup" << endl;
+    doWarmup(db, value, status, values, statuses, COMMON_KEY_PROB,
+             TOTAL_KEYS, commonKeys, numFetches);
+    cout << "Warmup finished" << endl;
 
     for (int i = 0; i < NUM_OF_RUNS; i++) {
-      vector<string> getKeys;
-      vector<string> mulKeys;
-      if(keyFromCommonSet(KEY_FROM_COMMON_SET_PROB)){
-        getKeys = commonSets.at(getKeySetIndexUniform(NUM_OF_COMMON_SETS));
-        mulKeys = commonSets.at(getKeySetIndexUniform(NUM_OF_COMMON_SETS));
-      } else {
-        getKeys = generateRandomTestKeys(numFetches, TOTAL_KEYS);
-        mulKeys = generateRandomTestKeys(numFetches, TOTAL_KEYS);
-      }
+      vector<string> getKeys = generateTestKeys(numFetches, commonKeys, TOTAL_KEYS, COMMON_KEY_PROB);
+      vector<string> mulKeys = generateTestKeys(numFetches, commonKeys, TOTAL_KEYS, COMMON_KEY_PROB);
       vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
       vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
       double getTime = get(db, getKeySlices, value, status);
