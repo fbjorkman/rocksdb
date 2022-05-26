@@ -104,6 +104,7 @@ int main(int argc, char** argv) {
   rocksdb::DB* db;
   rocksdb::Options options;
   options.create_if_missing = true;
+  options.statistics = rocksdb::CreateDBStatistics();
 
   rocksdb::Status status =
       rocksdb::DB::Open(options, "/home/fredrik/testdb", &db);
@@ -162,34 +163,35 @@ int main(int argc, char** argv) {
     cout << "Avg mul: " + to_string(totMulTime/NUM_OF_RUNS) << endl;
     cout << endl;
   }
+  cout << options.statistics->ToString() << endl;
 
-  outfile.open("get_rawdata_random.txt");
-  if(outfile.is_open()) {
-    for(const vector<double>& getRow : getRawData){
-      for(double rawGetData : getRow){
-        outfile << rawGetData << " ";
-      }
-      outfile << endl;
-    }
-    outfile.close();
-  }
-  else{
-    cout << "Unable to open file" << endl;
-  }
-
-  outfile.open("multiget_rawdata_random.txt");
-  if(outfile.is_open()) {
-    for(const vector<double>& multiGetRow : multiGetRawData){
-      for(double rawMultiGetData : multiGetRow){
-        outfile << rawMultiGetData << " ";
-      }
-      outfile << endl;
-    }
-    outfile.close();
-  }
-  else{
-    cout << "Unable to open file" << endl;
-  }
+//  outfile.open("get_rawdata_random.txt");
+//  if(outfile.is_open()) {
+//    for(const vector<double>& getRow : getRawData){
+//      for(double rawGetData : getRow){
+//        outfile << rawGetData << " ";
+//      }
+//      outfile << endl;
+//    }
+//    outfile.close();
+//  }
+//  else{
+//    cout << "Unable to open file" << endl;
+//  }
+//
+//  outfile.open("multiget_rawdata_random.txt");
+//  if(outfile.is_open()) {
+//    for(const vector<double>& multiGetRow : multiGetRawData){
+//      for(double rawMultiGetData : multiGetRow){
+//        outfile << rawMultiGetData << " ";
+//      }
+//      outfile << endl;
+//    }
+//    outfile.close();
+//  }
+//  else{
+//    cout << "Unable to open file" << endl;
+//  }
 
   delete db;
 
