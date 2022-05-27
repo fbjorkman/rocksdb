@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
   const int NUM_OF_KEYS[] = {5, 10, 50, 100, 500, 1000};
   const int NUM_OF_RUNS = 1000;
   const int TOTAL_KEYS = 1000000000;
-  const double COMMON_KEY_PROB = 0.5;
+  const double COMMON_KEY_PROB = 0.0;
 
   rocksdb::DB* db;
   rocksdb::Options options;
@@ -211,9 +211,9 @@ int main(int argc, char** argv) {
              TOTAL_KEYS, commonKeys, numFetches);
     cout << "Warmup finished" << endl;
 
-    outfile.open("1000keyStats.txt", std::ios_base::app);
-    outfile << "After Warmup" << endl;
-    outfile << options.statistics->ToString() << endl;
+//    outfile.open("1000keyStats.txt", std::ios_base::app);
+//    outfile << "After Warmup" << endl;
+//    outfile << options.statistics->ToString() << endl;
 
     for (int i = 0; i < NUM_OF_RUNS; i++) {
       vector<string> testKeys = generateTestKeysNoMultiples(numFetches, commonKeys, TOTAL_KEYS, COMMON_KEY_PROB);
@@ -241,33 +241,33 @@ int main(int argc, char** argv) {
 //  outfile << options.statistics->ToString() << endl;
 //  outfile.close();
 
-//  outfile.open("raw_data/get_rawdata_common_v2.txt");
-//  if(outfile.is_open()) {
-//    for(const vector<double>& getRow : getRawData){
-//      for(double rawGetData : getRow){
-//        outfile << rawGetData << " ";
-//      }
-//      outfile << endl;
-//    }
-//    outfile.close();
-//  }
-//  else{
-//    cout << "Unable to open file" << endl;
-//  }
-//
-//  outfile.open("raw_data/multiget_rawdata_common_v2.txt");
-//  if(outfile.is_open()) {
-//    for(const vector<double>& multiGetRow : multiGetRawData){
-//      for(double rawMultiGetData : multiGetRow){
-//        outfile << rawMultiGetData << " ";
-//      }
-//      outfile << endl;
-//    }
-//    outfile.close();
-//  }
-//  else{
-//    cout << "Unable to open file" << endl;
-//  }
+  outfile.open("raw_data/get_rawdata_common_v2.txt");
+  if(outfile.is_open()) {
+    for(const vector<double>& getRow : getRawData){
+      for(double rawGetData : getRow){
+        outfile << rawGetData << " ";
+      }
+      outfile << endl;
+    }
+    outfile.close();
+  }
+  else{
+    cout << "Unable to open file" << endl;
+  }
+
+  outfile.open("raw_data/multiget_rawdata_common_v2.txt");
+  if(outfile.is_open()) {
+    for(const vector<double>& multiGetRow : multiGetRawData){
+      for(double rawMultiGetData : multiGetRow){
+        outfile << rawMultiGetData << " ";
+      }
+      outfile << endl;
+    }
+    outfile.close();
+  }
+  else{
+    cout << "Unable to open file" << endl;
+  }
 
   delete db;
 
