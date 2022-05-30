@@ -58,3 +58,8 @@ add_executable(rocksdb_get_test_mixed
         rocksdb_get_test_mixed.cpp)
 target_link_libraries(rocksdb_get_test_mixed
         ${ROCKSDB_LIB})
+
+add_executable(rocksdb_workload_parser
+        rocksdb_workload_parser.cpp)
+target_link_libraries(rocksdb_workload_parser
+        ${ROCKSDB_LIB})
