@@ -97,8 +97,8 @@ void dbFillKeys(rocksdb::DB* db, int keyamount, rocksdb::Status &status){
 }
 
 int main(int argc, char** argv) {
-  const int NUM_OF_KEYS[] = {5, 10, 50, 100, 500, 1000};
-  const int NUM_OF_RUNS = 100;
+  const int NUM_OF_KEYS[] = {10, 100, 1000, 10000, 100000};
+  const int NUM_OF_RUNS = 10;
   const int TOTAL_KEYS = 1000000000;
 
   rocksdb::DB* db;
@@ -124,11 +124,11 @@ int main(int argc, char** argv) {
 
   // Warmup
   cout << "Starting warmup" << endl;
-  values.resize(5);
-  statuses.resize(5);
+  values.resize(10);
+  statuses.resize(10);
   for(int i = 0; i < 100; i++){
-    vector<string> getKeys = generateRandomTestKeys(5, TOTAL_KEYS);
-    vector<string> mulKeys = generateRandomTestKeys(5, TOTAL_KEYS);
+    vector<string> getKeys = generateRandomTestKeys(10, TOTAL_KEYS);
+    vector<string> mulKeys = generateRandomTestKeys(10, TOTAL_KEYS);
     vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
     vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
     get(db, getKeySlices, value, status);
@@ -149,8 +149,8 @@ int main(int argc, char** argv) {
       vector<string> mulKeys = generateRandomTestKeys(numFetches, TOTAL_KEYS);
       vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
       vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
-      double getTime = get(db, getKeySlices, value, status);
       double mulTime = multiGet(db, mulKeySlices, values, statuses);
+      double getTime = get(db, getKeySlices, value, status);
       totGetTime += getTime;
       totMulTime += mulTime;
       rawGetRow.emplace_back(getTime);
@@ -163,35 +163,35 @@ int main(int argc, char** argv) {
     cout << "Avg mul: " + to_string(totMulTime/NUM_OF_RUNS) << endl;
     cout << endl;
   }
-  cout << options.statistics->ToString() << endl;
+//  cout << options.statistics->ToString() << endl;
 
-//  outfile.open("get_rawdata_random.txt");
-//  if(outfile.is_open()) {
-//    for(const vector<double>& getRow : getRawData){
-//      for(double rawGetData : getRow){
-//        outfile << rawGetData << " ";
-//      }
-//      outfile << endl;
-//    }
-//    outfile.close();
-//  }
-//  else{
-//    cout << "Unable to open file" << endl;
-//  }
-//
-//  outfile.open("multiget_rawdata_random.txt");
-//  if(outfile.is_open()) {
-//    for(const vector<double>& multiGetRow : multiGetRawData){
-//      for(double rawMultiGetData : multiGetRow){
-//        outfile << rawMultiGetData << " ";
-//      }
-//      outfile << endl;
-//    }
-//    outfile.close();
-//  }
-//  else{
-//    cout << "Unable to open file" << endl;
-//  }
+  outfile.open("raw_data/get_rawdata_random.txt");
+  if(outfile.is_open()) {
+    for(const vector<double>& getRow : getRawData){
+      for(double rawGetData : getRow){
+        outfile << rawGetData << " ";
+      }
+      outfile << endl;
+    }
+    outfile.close();
+  }
+  else{
+    cout << "Unable to open file" << endl;
+  }
+
+  outfile.open("raw_data/multiget_rawdata_random.txt");
+  if(outfile.is_open()) {
+    for(const vector<double>& multiGetRow : multiGetRawData){
+      for(double rawMultiGetData : multiGetRow){
+        outfile << rawMultiGetData << " ";
+      }
+      outfile << endl;
+    }
+    outfile.close();
+  }
+  else{
+    cout << "Unable to open file" << endl;
+  }
 
   delete db;
 

@@ -137,14 +137,26 @@ void doWarmup(rocksdb::DB* db, string &value, rocksdb::Status &status,
               double prob, int totKeys, vector<string> &commonKeys,
               int numFetches){
 
-  for(int i = 0; i < 100; i++){
-    vector<string> getKeys = generateTestKeys(numFetches, commonKeys, totKeys, prob);
-    vector<string> mulKeys = generateTestKeys(numFetches, commonKeys, totKeys, prob);
-    vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
-    vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
-    get(db, getKeySlices, value, status);
-    multiGet(db, mulKeySlices, values, statuses);
+//  for(int i = 0; i < 100; i++){
+//    vector<string> getKeys = generateTestKeys(numFetches, commonKeys, totKeys, prob);
+//    vector<string> mulKeys = generateTestKeys(numFetches, commonKeys, totKeys, prob);
+//    vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
+//    vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
+//    get(db, getKeySlices, value, status);
+//    multiGet(db, mulKeySlices, values, statuses);
+//  }
+  for(string &key : commonKeys){
+    status = db->Get(rocksdb::ReadOptions(), key, &value);
+    assert(status.ok());
   }
+  vector<string> testKeys = generateTestKeysNoMultiples(numFetches, commonKeys, totKeys, prob);
+  vector<string> getKeys(testKeys.begin(), testKeys.begin() + testKeys.size()/2);
+  vector<string> mulKeys(testKeys.begin() + testKeys.size()/2, testKeys.end());
+  vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
+  vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
+
+  get(db, getKeySlices, value, status);
+  multiGet(db, mulKeySlices, values, statuses);
 }
 
 void evictCacheValues(rocksdb::DB* db, int numOfKeys, rocksdb::Status &status){
@@ -171,10 +183,18 @@ void dbFillKeys(rocksdb::DB* db, int keyamount, rocksdb::Status &status){
 }
 
 int main(int argc, char** argv) {
-  const int NUM_OF_KEYS[] = {5, 10, 50, 100, 500, 1000};
-  const int NUM_OF_RUNS = 1000;
+  const int NUM_OF_KEYS[] = {10, 100, 1000, 10000, 100000};
+  const int NUM_OF_RUNS = 10;
   const int TOTAL_KEYS = 1000000000;
-  const double COMMON_KEY_PROB = 0.0;
+  double COMMON_KEY_PROB;
+  string file_name;
+  if(argc >= 2){
+    COMMON_KEY_PROB = stod(argv[1]);
+    file_name = argv[2];
+  } else{
+    COMMON_KEY_PROB = 0.5;
+    file_name = "mixed";
+  }
 
   rocksdb::DB* db;
   rocksdb::Options options;
@@ -222,8 +242,8 @@ int main(int argc, char** argv) {
 
       vector<rocksdb::Slice> getKeySlices = generateKeySlices(getKeys);
       vector<rocksdb::Slice> mulKeySlices = generateKeySlices(mulKeys);
-      double getTime = get(db, getKeySlices, value, status);
       double mulTime = multiGet(db, mulKeySlices, values, statuses);
+      double getTime = get(db, getKeySlices, value, status);
       totGetTime += getTime;
       totMulTime += mulTime;
       rawGetRow.emplace_back(getTime);
@@ -236,12 +256,14 @@ int main(int argc, char** argv) {
     cout << "Avg mul: " + to_string(totMulTime/NUM_OF_RUNS) << endl;
     cout << endl;
   }
-  cout << options.statistics->ToString() << endl;
+//  db->GetProperty("rocksdb.block-cache-capacity", &value);
+//  cout << value << endl;
+//  cout << options.statistics->ToString() << endl;
 //  outfile << "After Run" << endl;
 //  outfile << options.statistics->ToString() << endl;
 //  outfile.close();
 
-  outfile.open("raw_data/get_rawdata_common_v2.txt");
+  outfile.open("raw_data/get_rawdata_" + file_name + ".txt");
   if(outfile.is_open()) {
     for(const vector<double>& getRow : getRawData){
       for(double rawGetData : getRow){
@@ -255,7 +277,7 @@ int main(int argc, char** argv) {
     cout << "Unable to open file" << endl;
   }
 
-  outfile.open("raw_data/multiget_rawdata_common_v2.txt");
+  outfile.open("raw_data/multiget_rawdata_" + file_name + ".txt");
   if(outfile.is_open()) {
     for(const vector<double>& multiGetRow : multiGetRawData){
       for(double rawMultiGetData : multiGetRow){
