@@ -1467,3 +1467,7 @@ option(WITH_BENCHMARK "build benchmark tests" OFF)
 if(WITH_BENCHMARK)
   add_subdirectory(${PROJECT_SOURCE_DIR}/microbench/)
 endif()
+
+add_executable(rocksdb_get_test examples/rocksdb_get_test.cpp)
+add_executable(db_bench_tool tools/db_bench_tool.cc)
+add_executable(rocksdb_workload_parser examples/rocksdb_workload_parser.cpp)
